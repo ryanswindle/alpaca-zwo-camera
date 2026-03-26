@@ -1,0 +1,24 @@
+entity: asicamera2
+library: "/usr/local/lib/libASICamera2.so"
+server:
+  host: 0.0.0.0
+  port: 5910
+log_level: DEBUG
+devices:
+  - entity: ASI178MM_1
+    device_number: 0
+    serial_number: "36983888"
+    defaults:
+      binning: 1
+      gain: 100
+      offset: 1
+      readout_mode: 0
+      temperature: -10
+      usb_bandwidth: 80
+    readout_modes:
+      - label: "Unity_Gain"
+        gain: 100
+      - label: "Low_Gain"
+        gain: 0
+      - label: "High_Gain"
+        gain: 300
