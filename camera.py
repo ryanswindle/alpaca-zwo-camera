@@ -49,7 +49,7 @@ class DeviceMetadata:
     InterfaceVersion = 4
 
 
-def _connected_property(device: CameraDevice, value, params):
+def _connected_property(device: CameraDevice, getter, params):
     """Helper for simple properties that require connection."""
     if not device.connected:
         return PropertyResponse.create(
@@ -58,7 +58,7 @@ def _connected_property(device: CameraDevice, value, params):
             error=NotConnectedException(),
         ).model_dump()
     return PropertyResponse.create(
-        value=value,
+        value=getter(),
         client_transaction_id=params.client_transaction_id,
     ).model_dump()
 
@@ -289,7 +289,7 @@ async def bayeroffsety(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/binx", summary="")
 async def binx_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.bin_x, params)
+    return _connected_property(device, lambda: device.bin_x, params)
 
 
 @router.put("/{devnum}/binx", summary="")
@@ -315,7 +315,7 @@ async def binx_put(devnum: int, BinX: Annotated[str, Form()], params: AlpacaPutP
 @router.get("/{devnum}/biny", summary="")
 async def biny_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.bin_y, params)
+    return _connected_property(device, lambda: device.bin_y, params)
 
 
 @router.put("/{devnum}/biny", summary="")
@@ -341,67 +341,67 @@ async def biny_put(devnum: int, BinY: Annotated[str, Form()], params: AlpacaPutP
 @router.get("/{devnum}/camerastate", summary="")
 async def camerastate(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, int(device.camera_state), params)
+    return _connected_property(device, lambda: int(device.camera_state), params)
 
 
 @router.get("/{devnum}/cameraxsize", summary="")
 async def cameraxsize(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.camera_x_size, params)
+    return _connected_property(device, lambda: device.camera_x_size, params)
 
 
 @router.get("/{devnum}/cameraysize", summary="")
 async def cameraysize(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.camera_y_size, params)
+    return _connected_property(device, lambda: device.camera_y_size, params)
 
 
 @router.get("/{devnum}/canabortexposure", summary="")
 async def canabortexposure(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_abort_exposure, params)
+    return _connected_property(device, lambda: device.can_abort_exposure, params)
 
 
 @router.get("/{devnum}/canasymmetricbin", summary="")
 async def canasymmetricbin(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_asymmetric_bin, params)
+    return _connected_property(device, lambda: device.can_asymmetric_bin, params)
 
 
 @router.get("/{devnum}/canfastreadout", summary="")
 async def canfastreadout(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_fast_readout, params)
+    return _connected_property(device, lambda: device.can_fast_readout, params)
 
 
 @router.get("/{devnum}/cangetcoolerpower", summary="")
 async def cangetcoolerpower(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_get_cooler_power, params)
+    return _connected_property(device, lambda: device.can_get_cooler_power, params)
 
 
 @router.get("/{devnum}/canpulseguide", summary="")
 async def canpulseguide(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_pulse_guide, params)
+    return _connected_property(device, lambda: device.can_pulse_guide, params)
 
 
 @router.get("/{devnum}/cansetccdtemperature", summary="")
 async def cansetccdtemperature(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_set_ccd_temperature, params)
+    return _connected_property(device, lambda: device.can_set_ccd_temperature, params)
 
 
 @router.get("/{devnum}/canstopexposure", summary="")
 async def canstopexposure(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.can_stop_exposure, params)
+    return _connected_property(device, lambda: device.can_stop_exposure, params)
 
 
 @router.get("/{devnum}/ccdtemperature", summary="")
 async def ccdtemperature(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.ccd_temperature, params)
+    return _connected_property(device, lambda: device.ccd_temperature, params)
 
 
 @router.get("/{devnum}/cooleron", summary="")
@@ -474,25 +474,25 @@ async def coolerpower(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/electronsperadu", summary="")
 async def electronsperadu(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.electrons_per_adu, params)
+    return _connected_property(device, lambda: device.electrons_per_adu, params)
 
 
 @router.get("/{devnum}/exposuremax", summary="")
 async def exposuremax(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.exposure_max, params)
+    return _connected_property(device, lambda: device.exposure_max, params)
 
 
 @router.get("/{devnum}/exposuremin", summary="")
 async def exposuremin(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.exposure_min, params)
+    return _connected_property(device, lambda: device.exposure_min, params)
 
 
 @router.get("/{devnum}/exposureresolution", summary="")
 async def exposureresolution(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.exposure_resolution, params)
+    return _connected_property(device, lambda: device.exposure_resolution, params)
 
 
 @router.get("/{devnum}/fastreadout", summary="")
@@ -524,7 +524,7 @@ async def fullwellcapacity(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/gain", summary="")
 async def gain_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.gain, params)
+    return _connected_property(device, lambda: device.gain, params)
 
 
 @router.put("/{devnum}/gain", summary="")
@@ -550,13 +550,13 @@ async def gain_put(devnum: int, Gain: Annotated[str, Form()], params: AlpacaPutP
 @router.get("/{devnum}/gainmax", summary="")
 async def gainmax(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.gain_max, params)
+    return _connected_property(device, lambda: device.gain_max, params)
 
 
 @router.get("/{devnum}/gainmin", summary="")
 async def gainmin(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.gain_min, params)
+    return _connected_property(device, lambda: device.gain_min, params)
 
 
 @router.get("/{devnum}/gains", summary="")
@@ -571,7 +571,7 @@ async def gains(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/hasshutter", summary="")
 async def hasshutter(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.has_shutter, params)
+    return _connected_property(device, lambda: device.has_shutter, params)
 
 
 @router.get("/{devnum}/heatsinktemperature", summary="")
@@ -632,7 +632,7 @@ async def imagearrayvariant(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/imageready", summary="")
 async def imageready(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.image_ready, params)
+    return _connected_property(device, lambda: device.image_ready, params)
 
 
 @router.get("/{devnum}/ispulseguiding", summary="")
@@ -646,37 +646,37 @@ async def ispulseguiding(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/lastexposureduration", summary="")
 async def lastexposureduration(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.last_exposure_duration, params)
+    return _connected_property(device, lambda: device.last_exposure_duration, params)
 
 
 @router.get("/{devnum}/lastexposurestarttime", summary="")
 async def lastexposurestarttime(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.last_exposure_start_time, params)
+    return _connected_property(device, lambda: device.last_exposure_start_time, params)
 
 
 @router.get("/{devnum}/maxadu", summary="")
 async def maxadu(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.max_adu, params)
+    return _connected_property(device, lambda: device.max_adu, params)
 
 
 @router.get("/{devnum}/maxbinx", summary="")
 async def maxbinx(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.max_bin_x, params)
+    return _connected_property(device, lambda: device.max_bin_x, params)
 
 
 @router.get("/{devnum}/maxbiny", summary="")
 async def maxbiny(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.max_bin_y, params)
+    return _connected_property(device, lambda: device.max_bin_y, params)
 
 
 @router.get("/{devnum}/numx", summary="")
 async def numx_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.num_x, params)
+    return _connected_property(device, lambda: device.num_x, params)
 
 
 @router.put("/{devnum}/numx", summary="")
@@ -702,7 +702,7 @@ async def numx_put(devnum: int, NumX: Annotated[str, Form()], params: AlpacaPutP
 @router.get("/{devnum}/numy", summary="")
 async def numy_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.num_y, params)
+    return _connected_property(device, lambda: device.num_y, params)
 
 
 @router.put("/{devnum}/numy", summary="")
@@ -728,7 +728,7 @@ async def numy_put(devnum: int, NumY: Annotated[str, Form()], params: AlpacaPutP
 @router.get("/{devnum}/offset", summary="")
 async def offset_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.offset, params)
+    return _connected_property(device, lambda: device.offset, params)
 
 
 @router.put("/{devnum}/offset", summary="")
@@ -754,13 +754,13 @@ async def offset_put(devnum: int, Offset: Annotated[str, Form()], params: Alpaca
 @router.get("/{devnum}/offsetmax", summary="")
 async def offsetmax(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.offset_max, params)
+    return _connected_property(device, lambda: device.offset_max, params)
 
 
 @router.get("/{devnum}/offsetmin", summary="")
 async def offsetmin(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.offset_min, params)
+    return _connected_property(device, lambda: device.offset_min, params)
 
 
 @router.get("/{devnum}/offsets", summary="")
@@ -784,19 +784,19 @@ async def percentcompleted(devnum: int, params: AlpacaGetParams = Depends()):
 @router.get("/{devnum}/pixelsizex", summary="")
 async def pixelsizex(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.pixel_size_x, params)
+    return _connected_property(device, lambda: device.pixel_size_x, params)
 
 
 @router.get("/{devnum}/pixelsizey", summary="")
 async def pixelsizey(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.pixel_size_y, params)
+    return _connected_property(device, lambda: device.pixel_size_y, params)
 
 
 @router.get("/{devnum}/readoutmode", summary="")
 async def readoutmode_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.readout_mode, params)
+    return _connected_property(device, lambda: device.readout_mode, params)
 
 
 @router.put("/{devnum}/readoutmode", summary="")
@@ -822,25 +822,25 @@ async def readoutmode_put(devnum: int, ReadoutMode: Annotated[str, Form()], para
 @router.get("/{devnum}/readoutmodes", summary="")
 async def readoutmodes(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.readout_modes, params)
+    return _connected_property(device, lambda: device.readout_modes, params)
 
 
 @router.get("/{devnum}/sensorname", summary="")
 async def sensorname(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.sensor_name, params)
+    return _connected_property(device, lambda: device.sensor_name, params)
 
 
 @router.get("/{devnum}/sensortype", summary="")
 async def sensortype(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, int(device.sensor_type), params)
+    return _connected_property(device, lambda: int(device.sensor_type), params)
 
 
 @router.get("/{devnum}/setccdtemperature", summary="")
 async def setccdtemperature_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.set_ccd_temperature, params)
+    return _connected_property(device, lambda: device.set_ccd_temperature, params)
 
 
 @router.put("/{devnum}/setccdtemperature", summary="")
@@ -866,7 +866,7 @@ async def setccdtemperature_put(devnum: int, SetCCDTemperature: Annotated[str, F
 @router.get("/{devnum}/startx", summary="")
 async def startx_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.start_x, params)
+    return _connected_property(device, lambda: device.start_x, params)
 
 
 @router.put("/{devnum}/startx", summary="")
@@ -892,7 +892,7 @@ async def startx_put(devnum: int, StartX: Annotated[str, Form()], params: Alpaca
 @router.get("/{devnum}/starty", summary="")
 async def starty_get(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
-    return _connected_property(device, device.start_y, params)
+    return _connected_property(device, lambda: device.start_y, params)
 
 
 @router.put("/{devnum}/starty", summary="")

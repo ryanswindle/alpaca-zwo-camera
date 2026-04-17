@@ -132,7 +132,8 @@ python test.py
 ```bash
 docker build -t alpaca-zwo-camera .
 docker run -d --name alpaca-zwo-camera \
-    -privileged -v /dev/bus/usb:/dev/bus/usb \
+    -v ./config.yaml:/alpyca/config.yaml:ro \
+    --privileged -v /dev/bus/usb:/dev/bus/usb \
     --network host \
     --restart unless-stopped \
     alpaca-zwo-camera

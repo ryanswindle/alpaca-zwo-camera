@@ -405,6 +405,10 @@ class CameraDevice:
         finally:
             self._connecting = False
 
+    @property
+    def entity(self) -> str:
+        return self._config.entity
+
     ######################
     # ICamera properties #
     ######################
