@@ -109,41 +109,70 @@ class ImageArrayElementTypes(IntEnum):
     UINT32 = 9
 
 
+_DTYPE_TO_ELEMENT_TYPE = {
+    np.dtype(np.uint8): ImageArrayElementTypes.BYTE,
+    np.dtype(np.int16): ImageArrayElementTypes.INT16,
+    np.dtype(np.uint16): ImageArrayElementTypes.UINT16,
+    np.dtype(np.int32): ImageArrayElementTypes.INT32,
+    np.dtype(np.uint32): ImageArrayElementTypes.UINT32,
+}
+
+
 IMAGEBYTES_HEADER_FORMAT = "<IIIIIIIIIII"
 IMAGEBYTES_HEADER_SIZE = struct.calcsize(IMAGEBYTES_HEADER_FORMAT)  # 44
 
 class ImageArrayResponse(PropertyResponse):
     """Response model for ImageArray property with ImageBytes support."""
-    Type: int = Field(default=2, description="Image element type")
-    Rank: int = Field(default=2, description="Array rank (2 for 2D)")
+    Type: int = Field(default=int(ImageArrayElementTypes.UNKNOWN), description="Image element type")
+    Rank: int = Field(default=2, description="Array rank (2 for 2D, 3 for color planes)")
+
+    @classmethod
+    def create(
+        cls,
+        value: Any,
+        client_transaction_id: int = 0,
+        error: Optional[AlpacaError] = None,
+    ) -> "ImageArrayResponse":
+        # Infer Type and Rank from the supplied array so JSON and ImageBytes
+        # paths both report correct metadata (including Rank=3 for RGB24).
+        err = error or Success()
+        if err.Number == 0 and value is not None:
+            arr = np.asarray(value)
+            element_type = _DTYPE_TO_ELEMENT_TYPE.get(
+                arr.dtype, ImageArrayElementTypes.UNKNOWN
+            )
+            rank = arr.ndim
+            value_out = arr
+        else:
+            element_type = ImageArrayElementTypes.UNKNOWN
+            rank = 2
+            value_out = None
+        return cls(
+            Value=value_out,
+            Type=int(element_type),
+            Rank=rank,
+            ClientTransactionID=client_transaction_id,
+            ServerTransactionID=get_next_transaction_id(),
+            ErrorNumber=err.Number,
+            ErrorMessage=err.Message,
+        )
 
     def to_imagebytes(self) -> bytes:
         """Convert the image array to ASCOM ImageBytes format."""
         if self.ErrorNumber == 0 and self.Value is not None:
             value = np.asarray(self.Value)
-            if value.dtype == np.int16:
-                image_element_type = transmission_element_type = (
-                    ImageArrayElementTypes.INT16
-                )
-            elif value.dtype == np.uint16:
-                image_element_type = transmission_element_type = (
-                    ImageArrayElementTypes.UINT16
-                )
-            elif value.dtype == np.int32:
-                image_element_type = transmission_element_type = (
-                    ImageArrayElementTypes.INT32
-                )
-            elif value.dtype == np.uint32:
-                image_element_type = transmission_element_type = (
-                    ImageArrayElementTypes.UINT32
-                )
-            else:
-                image_element_type = transmission_element_type = (
-                    ImageArrayElementTypes.UINT16
-                )
+            element_type = self.Type
+            if element_type == ImageArrayElementTypes.UNKNOWN:
+                # Unsupported dtype — coerce to uint16 as a safe default.
                 value = value.astype(np.uint16, order="C")
+                element_type = int(ImageArrayElementTypes.UINT16)
+            else:
+                value = np.ascontiguousarray(value)
 
-            image_bytes = value.astype(value.dtype, order="C").tobytes(order="C")
+            image_bytes = value.tobytes(order="C")
+            dim1 = value.shape[0] if value.ndim > 0 else 0
+            dim2 = value.shape[1] if value.ndim > 1 else 0
+            dim3 = value.shape[2] if value.ndim > 2 else 0
             return struct.pack(
                 f"{IMAGEBYTES_HEADER_FORMAT}{len(image_bytes)}s",
                 1,  # MetadataVersion
@@ -151,12 +180,12 @@ class ImageArrayResponse(PropertyResponse):
                 self.ClientTransactionID,  # ClientTransactionID
                 self.ServerTransactionID,  # ServerTransactionID
                 IMAGEBYTES_HEADER_SIZE,  # DataStart
-                image_element_type,  # ImageElementType
-                transmission_element_type,  # TransmissionElementType
+                element_type,  # ImageElementType
+                element_type,  # TransmissionElementType
                 self.Rank,  # Rank
-                value.shape[0],  # Dimension1
-                value.shape[1],  # Dimension2
-                0,  # Dimension3
+                dim1,  # Dimension1
+                dim2,  # Dimension2
+                dim3,  # Dimension3
                 image_bytes,  # Pixel data
             )
         else:

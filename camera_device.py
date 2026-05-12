@@ -602,7 +602,10 @@ class CameraDevice:
         self._camera_state = CameraState.IDLE
         self._image_ready = False
 
-        return img.astype(np.int32)
+        # Transpose from native (H, W[, 3]) to ASCOM (W, H[, 3]),
+        # preserving native unsigned dtype (uint8 for RAW8/Y8/RGB24,
+        # uint16 for RAW16). swapaxes(0, 1) handles both 2D and 3D.
+        return np.ascontiguousarray(img.swapaxes(0, 1))
 
     @property
     def image_ready(self) -> bool:
