@@ -8,6 +8,32 @@ from alpaca.exceptions import NotImplementedException, InvalidOperationException
 from config import config
 
 
+# array.array typecode → numpy dtype. Mirrors sensorkit's mapping so that
+# ImageArrayRaw retrievals preserve the wire dtype (no Python-int round-trip
+# via ImageArray's nested-list path, which silently widens to np.int_).
+_TYPECODE_TO_DTYPE = {
+    "B": "uint8",
+    "h": "int16",
+    "H": "uint16",
+    "i": "int32",
+    "I": "uint32",
+}
+
+
+def fetch_image(cam):
+    """Retrieve image via ImageArrayRaw to preserve native bit width.
+
+    Alpaca convention: Dimension1=NumX (width), Dimension2=NumY (height).
+    Server transmits with X fastest, so the flat buffer reshapes as
+    (W, H) and transposes to (H, W) for FITS row-major.
+    """
+    raw = cam.ImageArrayRaw
+    info = cam.ImageArrayInfo
+    dtype = _TYPECODE_TO_DTYPE.get(raw.typecode, "uint16")
+    arr = np.frombuffer(raw, dtype=dtype).reshape(info.Dimension1, info.Dimension2).T
+    return np.ascontiguousarray(arr)
+
+
 cam = Camera(f"127.0.0.1:{config.server.port}", 0)
 
 print(f"  Name:   {cam.Name}")
@@ -74,7 +100,12 @@ def save_fits(cam, img, filename):
     hdu.header["READMODE"] = cam.ReadoutModes[cam.ReadoutMode]
     hdu.header["GAIN"] = cam.Gain
     hdu.writeto(filename, overwrite=True)
-    print(f"Saved {filename}")
+    written = fits.getheader(filename)
+    print(
+        f"Saved {filename} (BITPIX={written['BITPIX']}, "
+        f"BZERO={written.get('BZERO', 0)}, "
+        f"NAXIS1={written['NAXIS1']}, NAXIS2={written['NAXIS2']})"
+    )
 
 
 # ============================================================================
@@ -91,8 +122,8 @@ while not cam.ImageReady:
         print("Timeout!")
         break
 if cam.ImageReady:
-    img = np.array(cam.ImageArray)
-    print(f"Got it. img.shape = {img.shape}, max = {int(np.max(img))}, med = {np.median(img)}")
+    img = fetch_image(cam)
+    print(f"Got it. img.shape = {img.shape}, dtype = {img.dtype}, max = {int(np.max(img))}, med = {np.median(img)}")
     print(f"LastExposureStartTime = {cam.LastExposureStartTime}")
     print(f"LastExposureDuration = {cam.LastExposureDuration}")
     save_fits(cam, img, "test1_1x1.fits")
@@ -111,8 +142,8 @@ while not cam.ImageReady:
         print("Timeout!")
         break
 if cam.ImageReady:
-    img = np.array(cam.ImageArray)
-    print(f"Got it. img.shape = {img.shape}, max = {int(np.max(img))}, med = {np.median(img)}")
+    img = fetch_image(cam)
+    print(f"Got it. img.shape = {img.shape}, dtype = {img.dtype}, max = {int(np.max(img))}, med = {np.median(img)}")
     print(f"LastExposureStartTime = {cam.LastExposureStartTime}")
     print(f"LastExposureDuration = {cam.LastExposureDuration}")
     save_fits(cam, img, "test2_4x4.fits")
@@ -138,8 +169,8 @@ while not cam.ImageReady:
         print("Timeout!")
         break
 if cam.ImageReady:
-    img = np.array(cam.ImageArray)
-    print(f"Got it. img.shape = {img.shape}, max = {int(np.max(img))}, med = {np.median(img)}")
+    img = fetch_image(cam)
+    print(f"Got it. img.shape = {img.shape}, dtype = {img.dtype}, max = {int(np.max(img))}, med = {np.median(img)}")
     print(f"LastExposureStartTime = {cam.LastExposureStartTime}")
     print(f"LastExposureDuration = {cam.LastExposureDuration}")
     save_fits(cam, img, "test3_2x2_roi.fits")
