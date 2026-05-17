@@ -13,7 +13,7 @@ from exceptions import (
 )
 from log import get_logger
 from responses import ImageArrayResponse, MethodResponse, PropertyResponse, StateValue
-from shr import AlpacaGetParams, AlpacaPutParams, to_bool
+from shr import AlpacaGetParams, AlpacaPutParams, alpaca_put_params, to_bool
 
 
 logger = get_logger()
@@ -50,15 +50,29 @@ class DeviceMetadata:
 
 
 def _connected_property(device: CameraDevice, getter, params):
-    """Helper for simple properties that require connection."""
+    """Helper for simple properties that require connection.
+
+    `getter` is a callable so the underlying property is read only after
+    the connection check passes — important because many getters call
+    into a hardware library that may not be loaded if no device is
+    attached.
+    """
     if not device.connected:
         return PropertyResponse.create(
             value=None,
             client_transaction_id=params.client_transaction_id,
             error=NotConnectedException(),
         ).model_dump()
+    try:
+        value = getter()
+    except Exception as ex:
+        return PropertyResponse.create(
+            value=None,
+            client_transaction_id=params.client_transaction_id,
+            error=DriverException(0x500, "Camera property read failed", ex),
+        ).model_dump()
     return PropertyResponse.create(
-        value=getter(),
+        value=value,
         client_transaction_id=params.client_transaction_id,
     ).model_dump()
 
@@ -67,7 +81,8 @@ def _connected_property(device: CameraDevice, getter, params):
 # ASCOM Methods Common To All Devices #
 #######################################
 @router.put("/{devnum}/action", summary="")
-async def action(devnum: int, params: AlpacaPutParams = Depends()):
+async def action(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("Action"),
@@ -75,7 +90,8 @@ async def action(devnum: int, params: AlpacaPutParams = Depends()):
 
 
 @router.put("/{devnum}/commandblind", summary="")
-async def commandblind(devnum: int, params: AlpacaPutParams = Depends()):
+async def commandblind(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("CommandBlind"),
@@ -83,7 +99,8 @@ async def commandblind(devnum: int, params: AlpacaPutParams = Depends()):
 
 
 @router.put("/{devnum}/commandbool", summary="")
-async def commandbool(devnum: int, params: AlpacaPutParams = Depends()):
+async def commandbool(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("CommandBool"),
@@ -91,7 +108,8 @@ async def commandbool(devnum: int, params: AlpacaPutParams = Depends()):
 
 
 @router.put("/{devnum}/commandstring", summary="")
-async def commandstring(devnum: int, params: AlpacaPutParams = Depends()):
+async def commandstring(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("CommandString"),
@@ -99,7 +117,7 @@ async def commandstring(devnum: int, params: AlpacaPutParams = Depends()):
 
 
 @router.put("/{devnum}/connect", summary="")
-async def connect(devnum: int, params: AlpacaPutParams = Depends()):
+async def connect(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     try:
         device.connect()
@@ -123,9 +141,12 @@ async def connected_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/connected", summary="")
-async def connected_put(devnum: int, Connected: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def connected_put(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
-    conn = to_bool(Connected)
+    value = params.get("Connected")
+    if value is None:
+        raise HTTPException(status_code=400, detail="Missing required parameter 'Connected'")
+    conn = to_bool(value)
     try:
         device.connected = conn
         return MethodResponse.create(
@@ -151,6 +172,7 @@ async def connecting_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/description", summary="")
 async def description(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=DeviceMetadata.Description,
         client_transaction_id=params.client_transaction_id,
@@ -162,7 +184,7 @@ async def devicestate(devnum: int, params: AlpacaGetParams = Depends()):
     device = get_device(devnum)
     if not device.connected:
         return PropertyResponse.create(
-            value=None,
+            value=[],
             client_transaction_id=params.client_transaction_id,
             error=NotConnectedException(),
         ).model_dump()
@@ -187,7 +209,7 @@ async def devicestate(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/disconnect", summary="")
-async def disconnect(devnum: int, params: AlpacaPutParams = Depends()):
+async def disconnect(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     try:
         device.disconnect()
@@ -203,6 +225,7 @@ async def disconnect(devnum: int, params: AlpacaPutParams = Depends()):
 
 @router.get("/{devnum}/driverinfo", summary="")
 async def driverinfo(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=DeviceMetadata.Info,
         client_transaction_id=params.client_transaction_id,
@@ -211,6 +234,7 @@ async def driverinfo(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/driverversion", summary="")
 async def driverversion(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=DeviceMetadata.Version,
         client_transaction_id=params.client_transaction_id,
@@ -219,6 +243,7 @@ async def driverversion(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/interfaceversion", summary="")
 async def interfaceversion(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=DeviceMetadata.InterfaceVersion,
         client_transaction_id=params.client_transaction_id,
@@ -227,6 +252,7 @@ async def interfaceversion(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/name", summary="")
 async def name(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=DeviceMetadata.Name,
         client_transaction_id=params.client_transaction_id,
@@ -235,6 +261,7 @@ async def name(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/supportedactions", summary="")
 async def supportedactions(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=[],
         client_transaction_id=params.client_transaction_id,
@@ -293,15 +320,20 @@ async def binx_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/binx", summary="")
-async def binx_put(devnum: int, BinX: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def binx_put(devnum: int, BinX: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
+    # Validate BinX *before* the connected check so bad values yield 400.
+    try:
+        bin_x = int(BinX)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"BinX must be an integer, got {BinX!r}")
     if not device.connected:
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
             error=NotConnectedException(),
         ).model_dump()
     try:
-        device.bin_x = int(BinX)
+        device.bin_x = bin_x
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
         ).model_dump()
@@ -319,15 +351,20 @@ async def biny_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/biny", summary="")
-async def biny_put(devnum: int, BinY: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def biny_put(devnum: int, BinY: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
+    # Validate BinY *before* the connected check so bad values yield 400.
+    try:
+        bin_y = int(BinY)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"BinY must be an integer, got {BinY!r}")
     if not device.connected:
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
             error=NotConnectedException(),
         ).model_dump()
     try:
-        device.bin_y = int(BinY)
+        device.bin_y = bin_y
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
         ).model_dump()
@@ -426,8 +463,10 @@ async def cooleron_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/cooleron", summary="")
-async def cooleron_put(devnum: int, CoolerOn: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def cooleron_put(devnum: int, CoolerOn: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
+    # Validate CoolerOn *before* the connected check so bad values yield 400.
+    cooler_on = to_bool(CoolerOn)
     if not device.connected:
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
@@ -439,7 +478,7 @@ async def cooleron_put(devnum: int, CoolerOn: Annotated[str, Form()], params: Al
             error=NotImplementedException("CoolerOn"),
         ).model_dump()
     try:
-        device.cooler_on = to_bool(CoolerOn)
+        device.cooler_on = cooler_on
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
         ).model_dump()
@@ -497,6 +536,7 @@ async def exposureresolution(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/fastreadout", summary="")
 async def fastreadout_get(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -505,7 +545,8 @@ async def fastreadout_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/fastreadout", summary="")
-async def fastreadout_put(devnum: int, FastReadout: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def fastreadout_put(devnum: int, FastReadout: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("FastReadout"),
@@ -514,6 +555,7 @@ async def fastreadout_put(devnum: int, FastReadout: Annotated[str, Form()], para
 
 @router.get("/{devnum}/fullwellcapacity", summary="")
 async def fullwellcapacity(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -528,15 +570,20 @@ async def gain_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/gain", summary="")
-async def gain_put(devnum: int, Gain: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def gain_put(devnum: int, Gain: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
+    # Validate Gain *before* the connected check so bad values yield 400.
+    try:
+        gain = int(Gain)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Gain must be an integer, got {Gain!r}")
     if not device.connected:
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
             error=NotConnectedException(),
         ).model_dump()
     try:
-        device.gain = int(Gain)
+        device.gain = gain
         return MethodResponse.create(
             client_transaction_id=params.client_transaction_id,
         ).model_dump()
@@ -561,6 +608,7 @@ async def gainmin(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/gains", summary="")
 async def gains(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -576,6 +624,7 @@ async def hasshutter(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/heatsinktemperature", summary="")
 async def heatsinktemperature(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -622,6 +671,7 @@ async def imagearray(devnum: int, params: AlpacaGetParams = Depends(), accept: O
 
 @router.get("/{devnum}/imagearrayvariant", summary="")
 async def imagearrayvariant(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -637,6 +687,7 @@ async def imageready(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/ispulseguiding", summary="")
 async def ispulseguiding(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=False,
         client_transaction_id=params.client_transaction_id,
@@ -680,7 +731,7 @@ async def numx_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/numx", summary="")
-async def numx_put(devnum: int, NumX: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def numx_put(devnum: int, NumX: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -706,7 +757,7 @@ async def numy_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/numy", summary="")
-async def numy_put(devnum: int, NumY: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def numy_put(devnum: int, NumY: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -732,7 +783,7 @@ async def offset_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/offset", summary="")
-async def offset_put(devnum: int, Offset: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def offset_put(devnum: int, Offset: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -765,6 +816,7 @@ async def offsetmin(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/offsets", summary="")
 async def offsets(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -774,6 +826,7 @@ async def offsets(devnum: int, params: AlpacaGetParams = Depends()):
 
 @router.get("/{devnum}/percentcompleted", summary="")
 async def percentcompleted(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -800,7 +853,7 @@ async def readoutmode_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/readoutmode", summary="")
-async def readoutmode_put(devnum: int, ReadoutMode: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def readoutmode_put(devnum: int, ReadoutMode: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -844,7 +897,7 @@ async def setccdtemperature_get(devnum: int, params: AlpacaGetParams = Depends()
 
 
 @router.put("/{devnum}/setccdtemperature", summary="")
-async def setccdtemperature_put(devnum: int, SetCCDTemperature: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def setccdtemperature_put(devnum: int, SetCCDTemperature: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -870,7 +923,7 @@ async def startx_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/startx", summary="")
-async def startx_put(devnum: int, StartX: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def startx_put(devnum: int, StartX: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -896,7 +949,7 @@ async def starty_get(devnum: int, params: AlpacaGetParams = Depends()):
 
 
 @router.put("/{devnum}/starty", summary="")
-async def starty_put(devnum: int, StartY: Annotated[str, Form()],params: AlpacaPutParams = Depends()):
+async def starty_put(devnum: int, StartY: Annotated[str, Form()],params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -917,6 +970,7 @@ async def starty_put(devnum: int, StartY: Annotated[str, Form()],params: AlpacaP
 
 @router.get("/{devnum}/subexposureduration", summary="")
 async def subexposureduration_get(devnum: int, params: AlpacaGetParams = Depends()):
+    get_device(devnum)
     return PropertyResponse.create(
         value=None,
         client_transaction_id=params.client_transaction_id,
@@ -925,7 +979,8 @@ async def subexposureduration_get(devnum: int, params: AlpacaGetParams = Depends
 
 
 @router.put("/{devnum}/subexposureduration", summary="")
-async def subexposureduration_put(devnum: int, SubExposureDuration: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def subexposureduration_put(devnum: int, SubExposureDuration: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
+    get_device(devnum)
     return MethodResponse.create(
         client_transaction_id=params.client_transaction_id,
         error=NotImplementedException("SubExposureDuration"),
@@ -936,7 +991,7 @@ async def subexposureduration_put(devnum: int, SubExposureDuration: Annotated[st
 # ICamera methods #
 ###################
 @router.put("/{devnum}/abortexposure", summary="")
-async def abortexposure(devnum: int, params: AlpacaPutParams = Depends()):
+async def abortexposure(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -956,7 +1011,7 @@ async def abortexposure(devnum: int, params: AlpacaPutParams = Depends()):
 
 
 @router.put("/{devnum}/pulseguide", summary="")
-async def pulseguide(devnum: int, Direction: Annotated[str, Form()], Duration: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def pulseguide(devnum: int, Direction: Annotated[str, Form()], Duration: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -981,7 +1036,7 @@ async def pulseguide(devnum: int, Direction: Annotated[str, Form()], Duration: A
 
 
 @router.put("/{devnum}/startexposure", summary="")
-async def startexposure(devnum: int, Duration: Annotated[str, Form()], Light: Annotated[str, Form()], params: AlpacaPutParams = Depends()):
+async def startexposure(devnum: int, Duration: Annotated[str, Form()], Light: Annotated[str, Form()], params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
@@ -1008,7 +1063,7 @@ async def startexposure(devnum: int, Duration: Annotated[str, Form()], Light: An
 
 
 @router.put("/{devnum}/stopexposure", summary="")
-async def stopexposure(devnum: int, params: AlpacaPutParams = Depends()):
+async def stopexposure(devnum: int, params: AlpacaPutParams = Depends(alpaca_put_params)):
     device = get_device(devnum)
     if not device.connected:
         return MethodResponse.create(
