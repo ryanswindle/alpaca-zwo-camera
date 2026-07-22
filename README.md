@@ -79,8 +79,8 @@ Tested on the ZWO ASI178MM.
 | `config.py`        | Pydantic config models, YAML loader         |
 | `config.yaml`      | User-editable configuration                 |
 | `camera.py`        | FastAPI router – ICameraV4 endpoints        |
-| `camera_device.py` | Low-level libqhyccd driver                  |
-| `libqhyccd.py`     | Wrappers to ASICamera2 library              |
+| `camera_device.py` | Low-level libASICamera2 driver              |
+| `libasicamera2.py` | Wrappers to ASICamera2 library              |
 | `management.py`    | `/management` Alpaca management endpoints   |
 | `setup.py`         | `/setup` HTML stub pages                    |
 | `discovery.py`     | UDP Alpaca discovery responder (port 32227) |

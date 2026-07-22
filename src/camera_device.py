@@ -153,6 +153,10 @@ class CameraDevice:
             self._connected = True
             self._camera_state = CameraState.IDLE
             self._image_ready = False
+            # A fresh connection has taken no exposures — LastExposure* must
+            # error until the first StartExposure of this session.
+            self._last_exposure_duration = None
+            self._last_exposure_start_time = None
             logger.info(f"Connected to camera {self._config.entity}")
 
         except Exception as e:
@@ -376,10 +380,19 @@ class CameraDevice:
 
     @connected.setter
     def connected(self, value: bool) -> None:
+        # Legacy synchronous semantics: Connected Set must not return until
+        # the attempt completes (Connect()/Disconnect() with Connecting are
+        # the asynchronous path).
         if value and not self._connected:
             self.connect()
+            if self._connect_thread is not None:
+                self._connect_thread.join()
+            if not self._connected:
+                raise RuntimeError("Connect failed (see server log)")
         elif not value and self._connected:
             self.disconnect()
+            if self._disconnect_thread is not None:
+                self._disconnect_thread.join()
 
     @property
     def connecting(self) -> bool:
@@ -388,6 +401,9 @@ class CameraDevice:
     def disconnect(self) -> None:
         if not self._connected and not self._connecting:
             return
+        # Connecting covers both transitions per the Platform 7 async
+        # pattern; the worker clears it when the teardown completes.
+        self._connecting = True
         self._disconnect_thread = Thread(target=self._disconnect_worker, daemon=True)
         self._disconnect_thread.start()
 
@@ -435,28 +451,12 @@ class CameraDevice:
             )
         self._bin_x = self._bin_y = value
 
-        # Reset to full frame at new binning
+        # Reset to full frame at new binning; the ROI is applied to the SDK
+        # in start_exposure
         width = self._camera_x_size // value
         height = self._camera_y_size // value
         width = (width // 8) * 8
         height = (height // 2) * 2
-
-        asi_call(
-            self._libasicamera2.ASISetROIFormat,
-            c_int(self._camera_id),
-            c_int(width),
-            c_int(height),
-            c_int(value),
-            c_int(self._img_type),
-            operation="SetROIFormat",
-        )
-        asi_call(
-            self._libasicamera2.ASISetStartPos,
-            c_int(self._camera_id),
-            c_int(0),
-            c_int(0),
-            operation="SetStartPos",
-        )
 
         self._start_x = 0
         self._start_y = 0
@@ -600,8 +600,9 @@ class CameraDevice:
         )
 
         self._camera_state = CameraState.IDLE
-        self._image_ready = False
 
+        # ImageReady stays true until the next StartExposure — clients may
+        # fetch the image more than once (ImageArray then ImageArrayVariant).
         # Transpose from native (H, W[, 3]) to ASCOM (W, H[, 3]),
         # preserving native unsigned dtype (uint8 for RAW8/Y8/RGB24,
         # uint16 for RAW16). swapaxes(0, 1) handles both 2D and 3D.
@@ -748,75 +749,21 @@ class CameraDevice:
         self, start_x=None, num_x=None, start_y=None, num_y=None
     ) -> None:
         """
-        Set ROI with proper validation.
+        Set ROI, stored as given.
 
-        All start/num values are in binned pixels per ASCOM spec.
-        The ASI SDK also works in binned pixels for ROI width/height
-        and start position (after ASISetROIFormat sets the binning).
+        All start/num values are in binned pixels per ASCOM spec. Per the
+        ICameraV4 spec the setters accept any value; validation happens in
+        start_exposure, which must reject an illegal ROI combination and
+        applies the validated ROI to the SDK.
         """
-        sx = start_x if start_x is not None else self._start_x
-        sy = start_y if start_y is not None else self._start_y
-        nx = num_x if num_x is not None else self._num_x
-        ny = num_y if num_y is not None else self._num_y
-
-        # Max binned dimensions
-        max_binned_x = self._camera_x_size // self._bin_x
-        max_binned_y = self._camera_y_size // self._bin_y
-
-        # Validate and clamp start values
-        if sx < 0:
-            sx = 0
-        if sy < 0:
-            sy = 0
-        if sx >= max_binned_x:
-            sx = max_binned_x - 1
-        if sy >= max_binned_y:
-            sy = max_binned_y - 1
-
-        # Validate and clamp num values
-        max_nx = max_binned_x - sx
-        max_ny = max_binned_y - sy
-        if nx < 1:
-            nx = 1
-        if ny < 1:
-            ny = 1
-        if nx > max_nx:
-            nx = max_nx
-        if ny > max_ny:
-            ny = max_ny
-
-        # ASI SDK alignment: width%8==0, height%2==0
-        nx = (nx // 8) * 8
-        ny = (ny // 2) * 2
-        if nx < 8:
-            nx = 8
-        if ny < 2:
-            ny = 2
-
-        # Set ROI format (width, height, bin, img_type)
-        asi_call(
-            self._libasicamera2.ASISetROIFormat,
-            c_int(self._camera_id),
-            c_int(nx),
-            c_int(ny),
-            c_int(self._bin_x),
-            c_int(self._img_type),
-            operation="SetROIFormat",
-        )
-
-        # Set start position
-        asi_call(
-            self._libasicamera2.ASISetStartPos,
-            c_int(self._camera_id),
-            c_int(sx),
-            c_int(sy),
-            operation="SetStartPos",
-        )
-
-        self._start_x = sx
-        self._start_y = sy
-        self._num_x = nx
-        self._num_y = ny
+        if start_x is not None:
+            self._start_x = start_x
+        if start_y is not None:
+            self._start_y = start_y
+        if num_x is not None:
+            self._num_x = num_x
+        if num_y is not None:
+            self._num_y = num_y
 
     ###################
     # ICamera methods #
@@ -824,6 +771,46 @@ class CameraDevice:
     def start_exposure(self, duration: float, light: bool) -> None:
         if self._camera_state != CameraState.IDLE:
             raise RuntimeError("Camera is not idle")
+        if duration < 0:
+            raise ValueError(f"Duration {duration} must be >= 0")
+        if duration > self._exposure_max:
+            raise ValueError(f"Duration {duration} above ExposureMax {self._exposure_max}")
+        if self._start_x < 0 or self._start_y < 0 or self._num_x < 1 or self._num_y < 1:
+            raise ValueError(
+                f"Invalid ROI: start=({self._start_x}, {self._start_y}) num=({self._num_x}, {self._num_y})"
+            )
+        max_binned_x = self._camera_x_size // self._bin_x
+        max_binned_y = self._camera_y_size // self._bin_y
+        if self._start_x + self._num_x > max_binned_x or self._start_y + self._num_y > max_binned_y:
+            raise ValueError(
+                f"ROI start=({self._start_x}, {self._start_y}) num=({self._num_x}, {self._num_y}) "
+                f"exceeds frame {max_binned_x} x {max_binned_y}"
+            )
+        # ASI SDK alignment (width%8==0, height%2==0) is a hard hardware
+        # constraint — reject rather than silently capture a clamped frame.
+        if self._num_x % 8 != 0 or self._num_y % 2 != 0:
+            raise ValueError(
+                f"NumX {self._num_x} must be a multiple of 8 and NumY {self._num_y} a multiple of 2"
+            )
+
+        # Apply the validated ROI and binning to the SDK
+        asi_call(
+            self._libasicamera2.ASISetROIFormat,
+            c_int(self._camera_id),
+            c_int(self._num_x),
+            c_int(self._num_y),
+            c_int(self._bin_x),
+            c_int(self._img_type),
+            operation="SetROIFormat",
+        )
+        asi_call(
+            self._libasicamera2.ASISetStartPos,
+            c_int(self._camera_id),
+            c_int(self._start_x),
+            c_int(self._start_y),
+            operation="SetStartPos",
+        )
+
         self._image_ready = False
         self._camera_state = CameraState.WAITING
         self._exposure_complete.clear()
@@ -901,6 +888,7 @@ class CameraDevice:
             )
 
             self._image_buffer = bytes(buf)
+            self._camera_state = CameraState.IDLE
             self._exposure_complete.set()
             self._image_ready = True
             logger.debug("image ready")
